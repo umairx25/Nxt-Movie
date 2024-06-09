@@ -2,6 +2,8 @@
 
 NxtMovie is an innovative movie recommender app designed to simplify the movie selection process based on user preferences. Whether you're a fan of action-packed thrillers, heartwarming dramas, or laugh-out-loud comedies, NxtMovie has you covered. Simply input your favorite movies or preferred attributes, and let NxtMovie generate personalized recommendations tailored to your taste.
 
+[![NxtMovie Demo Video](https://img.youtube.com/vi/BfWAH9884qQ/0.jpg)](https://www.youtube.com/watch?v=BfWAH9884qQ)
+
 ## Features
 - **Personalized Recommendations**: Get movie suggestions based on your favorite movies or preferred attributes.
 - **Intuitive User Interface**: Enjoy a seamless user experience with an intuitive interface and interactive features.
