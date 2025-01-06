@@ -84,7 +84,8 @@ class Movie:
         """
         Format the genres from the dataset into a list of genres
         """
-        return ast.literal_eval(gen)
+
+        return gen.split(',')
 
     def format_director(self, dirc: str) -> list[str]:
         """
@@ -196,10 +197,11 @@ def read_in_movies(df: pd.DataFrame) -> list[Movie]:
     movies = []
 
     for _, row in df.iterrows():
-        mov = Movie(name=row['Title'], image=row['Image Link'], rel=row['Release'], rating=row['Rating'],
-                    meta=row['Metacritic'],
-                    desc=row['Description'], aud=row['Audience'], dirc=str(row['Directors']), run=row['Runtime'],
-                    genre=row['Genres'])
+
+        mov = Movie(name=row['title'], image=row['image'], rel=row['release'], rating=row['rating'],
+                    meta=row['metacritic'],
+                    desc=row['description'], aud=row['audience'], dirc=str(row['directors']), run=row['runtime'],
+                    genre=  row['genres'])
         movies.append(mov)
 
     return movies
@@ -301,7 +303,7 @@ def get_random_movies(df: pd.DataFrame) -> list[str]:
     Extract random movies from the given pandas dataframe containing columns of movies and their attributes. Returns a
     list of movie names.
     """
-    random_row = df.sample(n=20)['Title']
+    random_row = df.sample(n=20)['title']
     random_lst = list(random_row)
 
     return random_lst

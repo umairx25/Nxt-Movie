@@ -53,7 +53,7 @@ def insert_data_into_table(data):
                                    d['genres']))
 
         except Exception as e:
-            print(e)
+            print("Insert data into table: " + e)
             print(d['title'])
 
     cursor.commit()

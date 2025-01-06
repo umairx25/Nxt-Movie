@@ -13,10 +13,13 @@ All forms of distribution of this code, whether as given or with any changes, ar
 
 © 2024 Umair Arham, Abdallah Arham Wajid Mohammed, Sameer Shahed, All Rights Reserved
 """
+import ast
 
 import streamlit as st
-from firebase_admin import firestore
+# from firebase_admin import firestore
 import pandas as pd
+
+import sql_db
 import trees
 import login
 import scraper
@@ -51,14 +54,16 @@ def update_session_state() -> None:
 
     if 'user' not in st.session_state:
         st.session_state['user'] = ''  # Initialize user to None
-        try:
-            login.initialize_firebase()
-
-        except ValueError:  # Only initialize firebase once to avoid ValueError
-            pass
+        # try:
+        #     login.initialize_firebase()
+        #
+        # except ValueError:  # Only initialize firebase once to avoid ValueError
+        #     pass
 
     if 'data' not in st.session_state and 'movies' not in st.session_state:
-        df = pd.read_csv('data/movies.csv')  # CHANGE HERE IF YOU WANT TO USE THE SMALLER DATASET
+        conn = sql_db.connect_to_db()
+        df = pd.read_sql('SELECT * FROM movies', conn)
+        df.drop(columns='id', axis=1, inplace=True)
         st.session_state['data'] = recommender.create_data_frame(df)
         st.session_state['movies'] = trees.read_in_movies(df)
 
@@ -66,20 +71,22 @@ def update_session_state() -> None:
     if not st.session_state['user']:
         username = login.login_form()
         st.session_state['user'] = username
-        doc = ''
 
         if username and username != 'Guest':
-            db = firestore.client()
-            doc_ref = db.collection("users").document(username)
-            doc = doc_ref.get()
+            conn = sql_db.connect_to_db()
+            cursor = conn.cursor()
+            query = 'SELECT liked_movies FROM users WHERE username = ?;'
+            cursor.execute(query, username)
 
-        if doc and doc.exists:
-            data = doc.to_dict()
-            favourites = data.get('favourites', [])
+            try:
+                favourites = ast.literal_eval(cursor.fetchone()[0])
+                print('Favourites: ', favourites)
+                for movie in set(trees.convert_to_movie_obj(favourites, st.session_state['movies'])):
+                    st.session_state['favs'].add(movie)
+                    st.session_state['toggle_status'][movie.name] = True
 
-            for movie in set(trees.convert_to_movie_obj(favourites, st.session_state['movies'])):
-                st.session_state['favs'].add(movie)
-                st.session_state['toggle_status'][movie.name] = True
+            except Exception as e:
+                st.session_state['favs'] = set()
 
     if st.session_state['key'] == set() and st.session_state['user']:
         st.session_state['key'] = trees.convert_to_movie_obj(trees.get_random_movies(st.session_state['data']),
@@ -185,19 +192,40 @@ def display_movies(top_movies: list[trees.Movie]) -> None:
 
         if toggle_status:
             st.session_state['favs'].add(movie)
+
             if st.session_state['user'] != 'Guest':
-                db = firestore.client()
-                doc_ref = db.collection("users").document(st.session_state['user'])
-                doc_ref.set(
-                    {"username": st.session_state['user'], "favourites": {f.name for f in st.session_state['favs']}})
+                username = st.session_state['user']
+                favourites = list({f.name for f in st.session_state['favs']})
+                conn= sql_db.connect_to_db()
+                cursor = conn.cursor()
+                query = "UPDATE users SET liked_movies = ? WHERE username = ?"
+                cursor.execute(query, (str(favourites), username))
+                cursor.commit()
+                cursor.close()
+
+                # db = firestore.client()
+                # doc_ref = db.collection("users").document(st.session_state['user'])
+                # doc_ref.set(
+                #     {"username": st.session_state['user'], "favourites": {f.name for f in st.session_state['favs']}})
 
         elif movie in st.session_state['favs']:
             st.session_state['favs'].discard(movie)
+
             if st.session_state['user'] != 'Guest':
-                db = firestore.client()
-                doc_ref = db.collection("users").document(st.session_state['user'])
-                doc_ref.set(
-                    {"username": st.session_state['user'], "favourites": {f.name for f in st.session_state['favs']}})
+                username = st.session_state['user']
+                favourites = list({f.name for f in st.session_state['favs']})
+                conn = sql_db.connect_to_db()
+                cursor = conn.cursor()
+                query = "UPDATE users SET liked_movies = ? WHERE username = ?"
+                cursor.execute(query, (str(favourites), username))
+                cursor.commit()
+                cursor.close()
+
+
+                # db = firestore.client()
+                # doc_ref = db.collection("users").document(st.session_state['user'])
+                # doc_ref.set(
+                #     {"username": st.session_state['user'], "favourites": {f.name for f in st.session_state['favs']}})
 
         st.divider()
 
