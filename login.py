@@ -28,25 +28,25 @@ def verify_email(email: str) -> bool:
     Returns:
         bool: True if the email exists, False otherwise.
     """
-    conn = None
+    conn = sql_db.connect_to_db()
+
     try:
-        conn = sql_db.connect_to_db()
         cursor = conn.cursor()
 
         # Query to check if email exists
-        query = "SELECT 1 FROM users WHERE email = ?"
+        query = "SELECT email FROM users WHERE email = ?"
         cursor.execute(query, email)
-        result = cursor.fetchone()
-        return result is not None
+        rslt = cursor.fetchone()[0]
+        print("Result: ", rslt)
+
+        return rslt is not None
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        # print(f"An error occurred: {e}")
         return False
 
     finally:
-        # Ensure the database connection is closed
-        if 'conn' in locals() and conn:
-            conn.close()
+        conn.close()
 
 
 def sign_in_with_password(email: str, password: str):
@@ -62,6 +62,7 @@ def sign_in_with_password(email: str, password: str):
         query = "SELECT password FROM users WHERE email = ?"
         cursor.execute(query, email)
         db_password = cursor.fetchone()[0]
+        print("DB password: ", db_password)
         cursor.close()
 
     except Exception as e:
@@ -100,34 +101,41 @@ def login_form() -> str:
             return 'Guest'
 
         if signup:
+            print('Button clicked')
+            print('Verification: ' + str(verify_email(email)))
+
             if not email:
                 st.warning('Please enter a valid email')
                 return ''
 
-            elif len(password) < 6:
+            if not username and not verify_email(email):
+                st.warning('Please enter a valid username')
+                return ''
+
+            if len(password) < 6:
                 st.warning('Your password must be at least 6 characters long')
                 return ''
 
-            elif not verify_email(email):
-
-                if not username:
-                    st.warning('Please enter a valid username')
-                    return ''
-
+            if not verify_email(email):
                 cursor = sql_db.connect_to_db().cursor()
+                print("User created")
                 query = "INSERT INTO users(username, email, password, liked_movies) VALUES (?, ?, ?, ?)"
-                cursor.execute(query, username, email, password, "")
+                cursor.execute(query, (username, email, password, "[]"))
+                cursor.commit()
                 cursor.close()
                 return username
 
             else:
                 correct_pwd = sign_in_with_password(email, password)
+                print(str(correct_pwd))
+
                 if correct_pwd:
                     placeholder.empty()
                     cursor = sql_db.connect_to_db().cursor()
                     query = "SELECT username FROM users WHERE email = ? AND password = ?"
                     cursor.execute(query, email, password)
-                    display_name = cursor.fetchone()[1]
+                    display_name = cursor.fetchone()[0]
+                    print('Username', display_name)
                     cursor.close()
 
                     return display_name
