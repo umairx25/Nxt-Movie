@@ -14,54 +14,60 @@ All forms of distribution of this code, whether as given or with any changes, ar
 © 2024 Umair Arham, Abdallah Arham Wajid Mohammed, Sameer Shahed, All Rights Reserved
 """
 
-from typing import Any
-import json
-import ast
-import os
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, auth, firestore
-import requests
-from dotenv import load_dotenv
+import sql_db
 
 
-def initialize_firebase() -> None:
+def verify_email(email: str) -> bool:
     """
-    Initialize a firebase app using credentials (contained in a .env file) from a Google firebase account
+    Checks if a user with the given email exists in the database.
+
+    Args:
+        email (str): The email to check.
+
+    Returns:
+        bool: True if the email exists, False otherwise.
     """
-    load_dotenv()
-    cred = ast.literal_eval(os.getenv('CRED'))
-    firebase_admin.initialize_app(credentials.Certificate(cred))
+    conn = None
+    try:
+        conn = sql_db.connect_to_db()
+        cursor = conn.cursor()
+
+        # Query to check if email exists
+        query = "SELECT 1 FROM users WHERE email = ?"
+        cursor.execute(query, email)
+        result = cursor.fetchone()
+        return result is not None
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return False
+
+    finally:
+        # Ensure the database connection is closed
+        if 'conn' in locals() and conn:
+            conn.close()
 
 
-def sign_in_with_password(email: str, password: str) -> Any:
+def sign_in_with_password(email: str, password: str):
     """
     Takes in an email and password, and uses the firebase authenticator to verify the login credentials (contained in a
     .env file). Returns the json object associated with email if login is successful, otherwise displays a warning on
     the streamlit application.
-
-    >>> verify = sign_in_with_password('test@gmail.com', 'CSC111')
-    >>> not verify
     False
     """
 
-    load_dotenv()
-    api_key = os.getenv('KEY')
-    rest_api_url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
-    payload = json.dumps({
-        "email": email,
-        "password": password,
-        "returnSecureToken": True
-    })
-
-    r = requests.post(rest_api_url, params={"key": api_key}, data=payload)
-
     try:
-        return r.json()['email']
+        cursor = sql_db.connect_to_db().cursor()
+        query = "SELECT password FROM users WHERE email = ?"
+        cursor.execute(query, email)
+        db_password = cursor.fetchone()[0]
+        cursor.close()
 
-    except KeyError:
-        st.warning('Login failed, please make sure your email and password are correct')
-        return None
+    except Exception as e:
+        return False
+
+    return db_password == password
 
 
 def login_form() -> str:
@@ -98,46 +104,37 @@ def login_form() -> str:
                 st.warning('Please enter a valid email')
                 return ''
 
-            if len(password) < 6:
+            elif len(password) < 6:
                 st.warning('Your password must be at least 6 characters long')
                 return ''
 
-            try:
-                user = auth.get_user_by_email(email)
-                correct_pwd = sign_in_with_password(email, password)
+            elif not verify_email(email):
 
-                if correct_pwd:
-                    placeholder.empty()
-                    return user.display_name
-
-            except auth.UserNotFoundError:  # If the user is not found, means we create an account for them
                 if not username:
                     st.warning('Please enter a valid username')
                     return ''
 
-                try:
-                    db = firestore.client()
-                    doc_ref = db.collection('users').document('test')
-                    doc_ref.set({"username": username, "email": email, "favourites": set()})
-                    auth.create_user(display_name=username, email=email, password=password)
-                    st.success('Account created successfully')
-                    placeholder.empty()
-                    return username
+                cursor = sql_db.connect_to_db().cursor()
+                query = "INSERT INTO users(username, email, password, liked_movies) VALUES (?, ?, ?, ?)"
+                cursor.execute(query, username, email, password, "")
+                cursor.close()
+                return username
 
-                except ValueError:
-                    return ''
+            else:
+                correct_pwd = sign_in_with_password(email, password)
+                if correct_pwd:
+                    placeholder.empty()
+                    cursor = sql_db.connect_to_db().cursor()
+                    query = "SELECT username FROM users WHERE email = ? AND password = ?"
+                    cursor.execute(query, email, password)
+                    display_name = cursor.fetchone()[1]
+                    cursor.close()
+
+                    return display_name
 
         return ''
 
 
-# if __name__ == "__main__":
-#     import python_ta
-#     import doctest
-#
-#     doctest.testmod(verbose=True)
-#
-#     python_ta.check_all(config={
-#         'extra-imports': ['typing', 'json', 'streamlit', 'firebase_admin', 'requests', 'dotenv', 'os', 'ast'],
-#         'allowed-io': ['login_form', 'sign_in_with_password'],
-#         'max-line-length': 120
-#     })
+if __name__ == "__main__":
+    result = verify_email('test@gmail.com')
+    print(result)
