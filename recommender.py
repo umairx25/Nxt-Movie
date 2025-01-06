@@ -30,11 +30,11 @@ def create_data_frame(df: pd.DataFrame) -> pd.DataFrame:
     under a new column titled by the movie name.
     """
 
-    df['Combined_Text'] = df['Genres'] + ' ' + df['Rating'] + ' ' + df['Description']
+    df['Combined_Text'] = df['genres'] + ' ' + df['rating'] + ' ' + df['description']
     vectorizer = TfidfVectorizer()
     vectorized = vectorizer.fit_transform(df['Combined_Text'])
     similarities = cosine_similarity(vectorized)
-    df2 = pd.DataFrame(similarities, columns=df['Title'], index=df['Title']).reset_index()
+    df2 = pd.DataFrame(similarities, columns=df['title'], index=df['title']).reset_index()
 
     return df2
 
@@ -49,7 +49,7 @@ def get_similar_movies(movie_name: str, dataframe: pd.DataFrame) -> list[str]:
     sim_scores_list = dataframe[movie_name].values.tolist()
 
     # Extract the names of all the titles the movie is being compared against, and remove the movie itself
-    titles_list = dataframe['Title'].tolist()
+    titles_list = dataframe['title'].tolist()
 
     # Create a dictionary mapping titles to similarity scores
     mapping = dict(zip(titles_list, sim_scores_list))

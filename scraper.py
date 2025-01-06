@@ -16,10 +16,10 @@ All forms of distribution of this code, whether as given or with any changes, ar
 
 import re
 from typing import Optional, Any
-import pandas as pd
 import bs4
 from bs4 import BeautifulSoup as bs
 import requests
+import sql_db
 
 
 def format_movie(movie: str, movie_link: str) -> str:
@@ -86,21 +86,23 @@ def get_title(soup: bs4.BeautifulSoup) -> list[str]:
 
         if title:
             title = title.split('. ')[1] if '. ' in title else title
-            titles.append(title)
+            titles.append(title[:8000])
         else:
             titles.append('Problem')
 
     return titles
 
 
-def get_image(soup: bs4.BeautifulSoup, default_image: str) -> list[str]:
+def get_image(soup: bs4.BeautifulSoup) -> list[str]:
     """
     Returns a list of URLs corresponding to all the movie images/posters from the given webpage. If no image is found
     the default image is appended to the return list.
     """
     lst_images = []
 
-    image_elements = soup.find_all(class_='c-finderProductCard_img')
+    image_elements = soup.find_all("img", {"class": "c-cmsImage-loaded"})
+    print(image_elements)
+
 
     for img_element in image_elements:
         img_tag = img_element.find('img')
@@ -108,8 +110,6 @@ def get_image(soup: bs4.BeautifulSoup, default_image: str) -> list[str]:
         if img_tag and 'src' in img_tag.attrs:
             image_url = img_tag['src']
             lst_images.append(image_url)
-        else:
-            lst_images.append(default_image)
 
     return lst_images
 
@@ -125,6 +125,7 @@ def get_rating(soup: bs4.BeautifulSoup) -> list[str]:
 
     for rating_element in rating_elements:
         try:
+
             rating_text = rating_element.text.strip().split()[-1] if rating_element else None
             if rating_text and rating_text != 'Metascore' and all(
                     s in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'] for s in rating_text):
@@ -163,6 +164,10 @@ def get_desc(soup: bs4.BeautifulSoup) -> list[str]:
 
     for desc_element in desc_elements:
         description = desc_element.text.strip() if desc_element else None
+
+        if description and len(description) > 8000:
+            description = description[:8000]
+
         if description:
             descriptions.append(description)
 
@@ -194,7 +199,7 @@ def director_name(soup: bs4.BeautifulSoup) -> str:
     try:
         dir_name = director_div.find('div',
                                      class_='c-crewList g-inner-spacing-bottom-small c-productDetails_staff_directors')
-        name = dir_name.text.split('Directed By:')[1].strip()
+        name = (dir_name.text.split('Directed By:')[1])
 
     except AttributeError:
         name = ''
@@ -236,7 +241,7 @@ def get_genre(soup: bs4.BeautifulSoup) -> list[str]:
         for li in genre_ul.find_all('li', class_='c-genreList_item'):
             span = li.find('span', class_='c-globalButton_label')
             if span:
-                genres.append(span.text.strip())
+                genres.append(span.text.strip()[:8000])
 
     except AttributeError:
         genres = []
@@ -275,36 +280,34 @@ def scrape_data(dest_file: str, base_link: str, start: Optional[int] = 1, end: O
     page_number = start
     max_pages = end
 
-    name_dict = {'Title': [], 'Image Link': [], 'Release': [], 'Rating': [],
-                 'Metacritic': [], 'Description': [], 'Audience': [],
-                 'Directors': [], 'Runtime': [],
-                 'Genres': []}
+    data = []
 
     while page_number <= max_pages:
         soup = bs(get_soup_item(base_link + str(page_number)).content, 'html.parser')
-
         titles = get_title(soup)
         movie_info = get_links(titles)
 
-        name_dict['Title'].extend(titles)
-        name_dict['Image Link'].extend(get_image(soup, 'https://i.ytimg.com/vi/g13gs5a8HZ4/hqdefault.jpg'))
-        name_dict['Release'].extend(rel_date(soup))
-        name_dict['Rating'].extend([r for r in get_rating(soup) if r != 'Metascore'])
-        name_dict['Metacritic'].extend(get_score(soup))
-        name_dict['Description'].extend(get_desc(soup))
-        name_dict['Audience'].extend(movie_info['aud_score'])
-        name_dict['Directors'].extend(movie_info['director'])
-        name_dict['Runtime'].extend(movie_info['time'])
-        name_dict['Genres'].extend(movie_info['genre_'])
+        # Combine data for each movie into a row dictionary
+        for i, title in enumerate(titles):
+            row = {
+                'title': title,
+                'image': get_image(soup)[i],
+                'release': rel_date(soup)[i] if i < len(rel_date(soup)) else None,
+                'rating': get_rating(soup)[i] if i < len(get_rating(soup)) else None,
+                'metacritic': get_score(soup)[i] if i < len(get_score(soup)) else None,
+                'description': get_desc(soup)[i] if i < len(get_desc(soup)) else None,
+                'audience': movie_info['aud_score'][i] if i < len(movie_info['aud_score']) else None,
+                'directors': movie_info['director'][i] if i < len(movie_info['director']) else None,
+                'runtime': movie_info['time'][i] if i < len(movie_info['time']) else None,
+                'genres': ', '.join(movie_info['genre_'][i]) if i < len(movie_info['genre_']) else None,
+            }
+            data.append(row)
+
+        print(f"Scraped page {page_number}")
 
         page_number += 1
 
-    df = pd.DataFrame(name_dict)
-
-    # Further data cleaning
-    df = df[(df['Audience'] != '0.0') & (df['Genres'] != '[]') & (df['Release'] != '')]
-
-    df.to_csv(dest_file, mode='a', index=False)
+    sql_db.insert_data_into_table(data)
 
 
 if __name__ == "__main__":
@@ -312,11 +315,12 @@ if __name__ == "__main__":
     BASE_LINK = 'https://www.metacritic.com/browse/movie/?releaseYearMin=1910&releaseYearMax=2024&page='
     MOVIE_LINK = 'https://www.metacritic.com/movie/'
     DEFAULT_IMG = 'https://i.ytimg.com/vi/g13gs5a8HZ4/hqdefault.jpg'
+    scrape_data('movies_short.csv', BASE_LINK, 1, 2)
 
-    import python_ta
-
-    python_ta.check_all(config={
-        'extra-imports': ['re', 'typing', 'pandas', 'bs4', 'requests'],
-        'allowed-io': ['login_form', 'sign_in_with_password'],
-        'max-line-length': 120
-    })
+    # import python_ta
+    #
+    # python_ta.check_all(config={
+    #     'extra-imports': ['re', 'typing', 'pandas', 'bs4', 'requests'],
+    #     'allowed-io': ['login_form', 'sign_in_with_password'],
+    #     'max-line-length': 120
+    # })
